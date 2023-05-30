@@ -1,0 +1,22 @@
+[package]
+name = "omni-wave"
+version = "0.1.0"
+edition = "2021"
+authors = ["K--A"]
+
+description = "Easy to use Discrete Wavelet Transform library, no need to worry about padding, and a variety of wavelets are available."
+
+documentation = "https://docs.rs/omni-wave"
+repository = "https://github.com/eternal-io/omni-wave"
+license = "MIT OR Apache-2.0"
+
+keywords = ["wavelet", "dwt"]
+categories = ["compression", "computer-vision", "mathematics"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ndarray = "0.15.6"
+
+[dev-dependencies]
+approx = "0.5.1"
