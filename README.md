@@ -9,12 +9,12 @@
 Easy to use Discrete Wavelet Transform library, no need to worry about padding, and a variety of wavelets are available.
 
 ``` rust
-# use approx::assert_abs_diff_eq;
+use approx::assert_abs_diff_eq;
 use ndarray::{Array1, Array2, Axis};
-use omni_wave::{completely_decompose_2d, completely_reconstruct_2d, wavelet};
+use omni_wave::*;
 
-let wave = wavelet::BIOR_3_1;
-let raw = Array2::<f32>::from_shape_vec((8, 8),
+let wavelet = wavelet::BIOR_3_1;
+let raw = Array2::from_shape_vec((8, 8),
 vec![0., 0., 0., 0., 0., 0., 0., 0.,
      0., 0., 0.,99.,99., 0., 0., 0.,
      0., 0.,99.,99.,99.,99., 0., 0.,
@@ -25,15 +25,19 @@ vec![0., 0., 0., 0., 0., 0., 0., 0.,
      0., 0., 0., 0., 0., 0., 0., 0.,]).unwrap();
 
 let mut signal_2d = raw.clone();
-let mut buffer = Array1::<f32>::zeros(signal_2d.len_of(Axis(0)) + wave.window_size() - 2);
+let mut buffer = Array1::zeros(signal_2d.len_of(Axis(0)) + wavelet.window_size() - 2);
 
-completely_decompose_2d(signal_2d.view_mut(), buffer.view_mut(), wave);
-completely_reconstruct_2d(signal_2d.view_mut(), buffer.view_mut(), wave);
+completely_decompose_2d(signal_2d.view_mut(), buffer.view_mut(), wavelet);
+completely_reconstruct_2d(signal_2d.view_mut(), buffer.view_mut(), wavelet);
 
 raw.into_iter()
     .zip(signal_2d)
     .for_each(|(a, b)| assert_abs_diff_eq!(a, b, epsilon = 0.0001));
 ```
+
+## Features
+
+- `f64` - The default primitive type used for calculations is `f32`. Enable this feature to switch to `f64`.
 
 ## Knowledges
 
@@ -55,6 +59,10 @@ Our filling method named `periodic` (in [PyWavelets](https://pywavelets.readthed
   Original signal   Padding: automatically fill & detach!
 ```
 
-#### Window
+#### Buffer
+
+Temporary buffer for calculations. For performance, it is strongly recommended that it be contiguous in memory.
+
+#### `window_size`
 
 The number of wavelet coefficients.

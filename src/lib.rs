@@ -1,9 +1,15 @@
 #![doc = include_str!("../README.md")]
 
 use ndarray::{s, ArrayView1, ArrayViewMut1, ArrayViewMut2, Axis};
-use std::ops::AddAssign;
+use std::ops::{AddAssign, DivAssign, MulAssign};
+
+#[cfg(not(feature = "f64"))]
+type FLTYPE = f32;
+#[cfg(feature = "f64")]
+type FLTYPE = f64;
 
 const TWO: usize = 2;
+const NORM_COEFF: FLTYPE = std::f64::consts::FRAC_1_SQRT_2 as FLTYPE;
 
 pub mod wavelet {
     //! Thanks to [Wavelet Browser](https://wavelets.pybytes.com/)!
@@ -15,7 +21,7 @@ pub mod wavelet {
     //! The number of wavelets are currently limited, and none of them has more than **12** coefficients.
     //!
     //! *(Because I'm lazy :)*
-    use super::Wavelet;
+    use super::*;
 
     mod bior;
     mod coif;
@@ -49,10 +55,10 @@ pub mod wavelet {
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct Wavelet {
-    pub decomp_low: &'static [f32],
-    pub decomp_high: &'static [f32],
-    pub recons_low: &'static [f32],
-    pub recons_high: &'static [f32],
+    pub decomp_low: &'static [FLTYPE],
+    pub decomp_high: &'static [FLTYPE],
+    pub recons_low: &'static [FLTYPE],
+    pub recons_high: &'static [FLTYPE],
 }
 impl Wavelet {
     #[inline]
@@ -75,7 +81,11 @@ impl Wavelet {
 ///
 /// - `buffer_size` >= `signal_size + window_size - TWO`
 #[doc(alias = "dwt")]
-pub fn decompose(mut signal: ArrayViewMut1<f32>, mut buffer: ArrayViewMut1<f32>, wavelet: Wavelet) {
+pub fn decompose(
+    mut signal: ArrayViewMut1<FLTYPE>,
+    mut buffer: ArrayViewMut1<FLTYPE>,
+    wavelet: Wavelet,
+) {
     let signal_size = signal.len();
     let window_size = wavelet.window_size();
 
@@ -110,6 +120,10 @@ pub fn decompose(mut signal: ArrayViewMut1<f32>, mut buffer: ArrayViewMut1<f32>,
         signal[step_signal] = slice_signal.dot(&low_pass); // 就地操作
         signal[half + step_signal] = slice_signal.dot(&high_pass);
     }
+
+    /* 归一化 */
+
+    signal.mul_assign(NORM_COEFF);
 }
 
 /// Inverse wavelet transform, 1D, only once, inplace.
@@ -123,14 +137,19 @@ pub fn decompose(mut signal: ArrayViewMut1<f32>, mut buffer: ArrayViewMut1<f32>,
 /// - `buffer_size` >= `signal_size + window_size - TWO`
 #[doc(alias = "idwt")]
 pub fn reconstruct(
-    mut signal: ArrayViewMut1<f32>,
-    mut buffer: ArrayViewMut1<f32>,
+    mut signal: ArrayViewMut1<FLTYPE>,
+    mut buffer: ArrayViewMut1<FLTYPE>,
     wavelet: Wavelet,
 ) {
     let signal_size = signal.len();
     let window_size = wavelet.window_size();
 
     let expected_buffer_size = signal_size + window_size - TWO;
+
+    /* 反归一化 */
+
+    let half = signal_size / TWO;
+    signal.div_assign(NORM_COEFF);
 
     /* 卷积 */
 
@@ -140,7 +159,6 @@ pub fn reconstruct(
         ArrayView1::from_shape(window_size, wavelet.recons_high).unwrap(),
     );
 
-    let half = signal_size / TWO;
     for (mut step_buffer, approx_n) in signal.slice(s![..half]).into_iter().enumerate() {
         step_buffer *= 2;
         buffer
@@ -181,8 +199,8 @@ pub fn reconstruct(
 /// - `buffer_size` >= `signal_size + window_size - TWO`
 #[doc(alias = "dwt")]
 pub fn completely_decompose(
-    mut signal: ArrayViewMut1<f32>,
-    mut buffer: ArrayViewMut1<f32>,
+    mut signal: ArrayViewMut1<FLTYPE>,
+    mut buffer: ArrayViewMut1<FLTYPE>,
     wavelet: Wavelet,
 ) {
     let mut signal_size = signal.len();
@@ -210,8 +228,8 @@ pub fn completely_decompose(
 /// - `buffer_size` >= `signal_size + window_size - TWO`
 #[doc(alias = "idwt")]
 pub fn completely_reconstruct(
-    mut signal: ArrayViewMut1<f32>,
-    mut buffer: ArrayViewMut1<f32>,
+    mut signal: ArrayViewMut1<FLTYPE>,
+    mut buffer: ArrayViewMut1<FLTYPE>,
     wavelet: Wavelet,
 ) {
     let signal_size = signal.len();
@@ -241,8 +259,8 @@ pub fn completely_reconstruct(
 /// - `buffer_size` >= `signal_side_length + window_size - TWO`
 #[doc(alias = "dwt2")]
 pub fn decompose_2d(
-    mut signal_2d: ArrayViewMut2<f32>,
-    mut buffer: ArrayViewMut1<f32>,
+    mut signal_2d: ArrayViewMut2<FLTYPE>,
+    mut buffer: ArrayViewMut1<FLTYPE>,
     wavelet: Wavelet,
 ) {
     signal_2d
@@ -273,8 +291,8 @@ pub fn decompose_2d(
 /// - `buffer_size` >= `signal_side_length + window_size - TWO`
 #[doc(alias = "idwt2")]
 pub fn reconstruct_2d(
-    mut signal_2d: ArrayViewMut2<f32>,
-    mut buffer: ArrayViewMut1<f32>,
+    mut signal_2d: ArrayViewMut2<FLTYPE>,
+    mut buffer: ArrayViewMut1<FLTYPE>,
     wavelet: Wavelet,
 ) {
     signal_2d
@@ -311,8 +329,8 @@ pub fn reconstruct_2d(
 /// - `buffer_size` >= `signal_side_length + window_size - TWO`
 #[doc(alias = "dwt2")]
 pub fn completely_decompose_2d(
-    mut signal_2d: ArrayViewMut2<f32>,
-    mut buffer: ArrayViewMut1<f32>,
+    mut signal_2d: ArrayViewMut2<FLTYPE>,
+    mut buffer: ArrayViewMut1<FLTYPE>,
     wavelet: Wavelet,
 ) {
     let height = signal_2d.len_of(Axis(0));
@@ -353,8 +371,8 @@ pub fn completely_decompose_2d(
 /// - `buffer_size` >= `signal_side_length + window_size - TWO`
 #[doc(alias = "idwt2")]
 pub fn completely_reconstruct_2d(
-    mut signal_2d: ArrayViewMut2<f32>,
-    mut buffer: ArrayViewMut1<f32>,
+    mut signal_2d: ArrayViewMut2<FLTYPE>,
+    mut buffer: ArrayViewMut1<FLTYPE>,
     wavelet: Wavelet,
 ) {
     let height = signal_2d.len_of(Axis(0));
@@ -380,25 +398,39 @@ mod tests {
     use ndarray::{s, Array1, Array2, Axis};
 
     #[test]
+    fn norm_test() {
+        // let wavelet = wavelet::RBIO_3_1;
+        let wavelet = wavelet::BIOR_3_1;
+        let mut signal = Array1::<FLTYPE>::from_vec(vec![0., 0., 0., 0., 255., 255., 255., 255.]);
+        let mut buffer = Array1::<FLTYPE>::zeros(signal.len() + wavelet.window_size() - TWO);
+
+        completely_decompose(signal.view_mut(), buffer.view_mut(), wavelet);
+        println!("{signal:>5.1}");
+
+        signal.for_each(|v| assert!(*v >= -128. && *v <= 128.));
+    }
+
+    #[test]
     fn auto_2d() {
-        let wave = wavelet::BIOR_3_1;
+        let wavelet = wavelet::BIOR_3_5;
         #[rustfmt::skip]
-        let raw = Array2::<f32>::from_shape_vec((8, 8), vec![
-            0., 0., 0., 0., 0., 0., 0., 0.,
-            0., 0., 0.,99.,99., 0., 0., 0.,
-            0., 0.,99.,99.,99.,99., 0., 0.,
-            0.,99.,99.,99.,99.,99.,99., 0.,
-            0.,99.,99.,99.,99.,99.,99., 0.,
-            0., 0.,99.,99.,99.,99., 0., 0.,
-            0., 0., 0.,99.,99., 0., 0., 0.,
-            0., 0., 0., 0., 0., 0., 0., 0.,
+        let raw = Array2::from_shape_vec((8, 8), vec![
+            52., 55., 61., 66., 70., 61., 64., 73.,
+            63., 59., 55., 90., 109.,85., 69., 72.,
+            62., 59., 68., 113.,144.,104.,66., 73.,
+            63., 58., 71., 122.,154.,106.,70., 69.,
+            67., 61., 68., 104.,126.,88., 68., 70.,
+            79., 65., 60., 70., 77., 68., 58., 75.,
+            85., 71., 64., 59., 55., 61., 65., 83.,
+            87., 79., 69., 68., 65., 76., 78., 94.,
         ]).unwrap();
         let mut signal_2d = raw.clone();
-        let mut buffer = Array1::<f32>::zeros(signal_2d.len_of(Axis(0)) + wave.window_size() - TWO);
+        let mut buffer =
+            Array1::<FLTYPE>::zeros(signal_2d.len_of(Axis(0)) + wavelet.window_size() - TWO);
 
-        completely_decompose_2d(signal_2d.view_mut(), buffer.view_mut(), wave);
-        println!("{signal_2d}");
-        completely_reconstruct_2d(signal_2d.view_mut(), buffer.view_mut(), wave);
+        completely_decompose_2d(signal_2d.view_mut(), buffer.view_mut(), wavelet);
+        println!("{signal_2d:>5.1}");
+        completely_reconstruct_2d(signal_2d.view_mut(), buffer.view_mut(), wavelet);
 
         raw.into_iter()
             .zip(signal_2d)
@@ -407,23 +439,23 @@ mod tests {
 
     #[test]
     fn manual_2d() {
-        let wave = wavelet::SYM_4;
+        let wavelet = wavelet::BIOR_3_1;
         #[rustfmt::skip]
-        let raw = Array2::<f32>::from_shape_vec((8, 10), vec![
-            0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+        let raw = Array2::<FLTYPE>::from_shape_vec((6, 10), vec![
             0., 0., 0.,99.,99.,99.,99., 0., 0., 0.,
             0., 0.,99.,99.,99.,99.,99.,99., 0., 0.,
             0.,99.,99.,99.,99.,99.,99.,99.,99., 0.,
             0.,99.,99.,99.,99.,99.,99.,99.,99., 0.,
             0., 0.,99.,99.,99.,99.,99.,99., 0., 0.,
             0., 0., 0.,99.,99.,99.,99., 0., 0., 0.,
-            0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
         ]).unwrap();
         let mut signal_2d = raw.clone();
-        let mut buffer = Array1::<f32>::zeros(signal_2d.len_of(Axis(1)) + wave.window_size() - TWO);
+        let mut buffer =
+            Array1::<FLTYPE>::zeros(signal_2d.len_of(Axis(1)) + wavelet.window_size() - TWO);
 
-        decompose_2d(signal_2d.view_mut(), buffer.view_mut(), wave);
-        reconstruct_2d(signal_2d.view_mut(), buffer.view_mut(), wave);
+        decompose_2d(signal_2d.view_mut(), buffer.view_mut(), wavelet);
+        println!("{signal_2d:>5.1}");
+        reconstruct_2d(signal_2d.view_mut(), buffer.view_mut(), wavelet);
 
         raw.into_iter()
             .zip(signal_2d)
@@ -432,15 +464,14 @@ mod tests {
 
     #[test]
     fn auto_1d() {
-        let wave = wavelet::BIOR_2_2;
-        let raw = Array1::<f32>::from_vec(vec![0., 10., 100., 200., 250., 30., 20., 10.]);
+        let wavelet = wavelet::BIOR_2_2;
+        let raw = Array1::<FLTYPE>::from_vec(vec![0., 10., 100., 200., 250., 30., 20., 10.]);
         let mut signal = raw.clone();
-        let mut buffer = Array1::<f32>::zeros(signal.len() + wave.window_size() - TWO);
+        let mut buffer = Array1::<FLTYPE>::zeros(signal.len() + wavelet.window_size() - TWO);
 
-        completely_decompose(signal.view_mut(), buffer.view_mut(), wave);
-        println!("{signal}");
-        completely_reconstruct(signal.view_mut(), buffer.view_mut(), wave);
-        println!("{signal}");
+        completely_decompose(signal.view_mut(), buffer.view_mut(), wavelet);
+        println!("{signal:>5.1}");
+        completely_reconstruct(signal.view_mut(), buffer.view_mut(), wavelet);
 
         raw.into_iter()
             .zip(signal)
@@ -449,20 +480,18 @@ mod tests {
 
     #[test]
     fn manual_1d() {
-        let wave = wavelet::HAAR;
-        let raw = Array1::<f32>::from_vec(vec![31., 41., 59., 26., 53., 58., 97., 93.]);
+        let wavelet = wavelet::HAAR;
+        let raw = Array1::<FLTYPE>::from_vec(vec![31., 41., 59., 26., 53., 58., 97., 93.]);
         let mut signal = raw.clone();
-        let mut buffer = Array1::<f32>::zeros(signal.len() + wave.window_size() - TWO);
+        let mut buffer = Array1::<FLTYPE>::zeros(signal.len() + wavelet.window_size() - TWO);
 
-        decompose(signal.slice_mut(s![..8]), buffer.view_mut(), wave);
-        decompose(signal.slice_mut(s![..4]), buffer.view_mut(), wave);
-        decompose(signal.slice_mut(s![..2]), buffer.view_mut(), wave);
-        println!("{signal}");
-
-        reconstruct(signal.slice_mut(s![..2]), buffer.view_mut(), wave);
-        reconstruct(signal.slice_mut(s![..4]), buffer.view_mut(), wave);
-        reconstruct(signal.slice_mut(s![..8]), buffer.view_mut(), wave);
-        println!("{signal}");
+        decompose(signal.slice_mut(s![..8]), buffer.view_mut(), wavelet);
+        decompose(signal.slice_mut(s![..4]), buffer.view_mut(), wavelet);
+        decompose(signal.slice_mut(s![..2]), buffer.view_mut(), wavelet);
+        println!("{signal:>5.1}");
+        reconstruct(signal.slice_mut(s![..2]), buffer.view_mut(), wavelet);
+        reconstruct(signal.slice_mut(s![..4]), buffer.view_mut(), wavelet);
+        reconstruct(signal.slice_mut(s![..8]), buffer.view_mut(), wavelet);
 
         raw.into_iter()
             .zip(signal)

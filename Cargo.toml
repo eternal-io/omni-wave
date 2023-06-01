@@ -1,6 +1,6 @@
 [package]
 name = "omni-wave"
-version = "0.1.0"
+version = "0.2.0-alpha"
 edition = "2021"
 authors = ["K--A"]
 
@@ -17,6 +17,9 @@ categories = ["compression", "computer-vision", "mathematics"]
 
 [dependencies]
 ndarray = "0.15.6"
+
+[features]
+f64 = []
 
 [dev-dependencies]
 approx = "0.5.1"
