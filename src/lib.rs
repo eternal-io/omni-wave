@@ -54,13 +54,13 @@ pub mod wavelet {
 ///        |<->|------- *Sliding*!
 /// ```
 #[derive(Debug, Clone, Copy)]
-pub struct Wavelet {
-    pub decomp_low: &'static [FLTYPE],
-    pub decomp_high: &'static [FLTYPE],
-    pub recons_low: &'static [FLTYPE],
-    pub recons_high: &'static [FLTYPE],
+pub struct Wavelet<'a> {
+    pub decomp_low: &'a [FLTYPE],
+    pub decomp_high: &'a [FLTYPE],
+    pub recons_low: &'a [FLTYPE],
+    pub recons_high: &'a [FLTYPE],
 }
-impl Wavelet {
+impl<'a> Wavelet<'a> {
     #[inline]
     pub const fn window_size(&self) -> usize {
         self.decomp_low.len()
@@ -70,6 +70,46 @@ impl Wavelet {
         (self.decomp_low.len() - 2) >> 1
     }
 }
+
+// /// Signal extension modes.
+// ///
+// /// ``` plaintext
+// /// Symmetric   /      *\. *      |      * | *      |
+// ///            |      * *|* *     |     * *|* *     |
+// ///            |  ****   |   **** | ****   |   **** |
+// ///             \*      /'       *|*       |       *|
+// ///
+// /// Reflect     /      *\.*      |     * |*      |
+// ///            |      * *| *     |    * *| *     |
+// ///            |  ****   |  **** |****   |  **** |
+// ///             \*      /'      *|       |      *|
+// ///
+// /// Periodic    /      *\.      * |      * |
+// ///            |      * *|     * *|     * *|
+// ///            |  ****   | ****   | ****   |
+// ///             \*      /'*       |*       |
+// ///
+// /// Edge        /      *\.        |        |
+// ///            |      * *|********|********|
+// ///            |  ****   |        |        |
+// ///             \*      /'        |        |
+// /// Zero ==
+// /// Constant(0) /      *\.        |        |
+// ///            |      * *|        |        |
+// ///            |  ****   |        |        |
+// ///             \*      /'********|********|
+// /// ```
+// #[non_exhaustive]
+// #[derive(Debug, Default, Clone, Copy, PartialEq)]
+// pub enum ExtensionMode {
+//     #[default]
+//     Symmetric,
+//     Reflect,
+//     Periodic,
+//     Edge,
+//     Zero,
+//     Constant(FLTYPE),
+// }
 
 /// Forward wavelet transform, 1D, only once, inplace.
 ///
@@ -94,17 +134,14 @@ pub fn decompose(
     /* 填充 */
 
     let mut step_buffer = 0;
-    while step_buffer + signal_size < expected_buffer_size {
+    while step_buffer < expected_buffer_size {
         buffer
-            .slice_mut(s![step_buffer..step_buffer + signal_size])
-            .assign(&signal);
+            .slice_mut(s![step_buffer..])
+            .iter_mut()
+            .zip(signal.view())
+            .for_each(|(dst, src)| *dst = *src);
         step_buffer += signal_size;
     }
-    buffer
-        .slice_mut(s![step_buffer..expected_buffer_size])
-        .into_iter()
-        .zip(&signal) // 用迭代器不是比列公式方便的多？
-        .for_each(|(buf, sig)| *buf = *sig);
 
     /* 卷积 */
 
@@ -113,7 +150,7 @@ pub fn decompose(
         ArrayView1::from_shape(window_size, wavelet.decomp_high).unwrap(),
     );
 
-    let half = signal.len() / TWO;
+    let half = signal_size / TWO;
     for (step_signal, step_buffer) in (0..signal_size).step_by(TWO).enumerate() {
         let slice_signal = buffer.slice(s![step_buffer..step_buffer + window_size]);
 
@@ -144,7 +181,7 @@ pub fn reconstruct(
     let signal_size = signal.len();
     let window_size = wavelet.window_size();
 
-    let expected_buffer_size = signal_size + window_size - TWO;
+    let occupied_buffer_size = signal_size + window_size - TWO;
 
     /* 反归一化 */
 
@@ -153,7 +190,7 @@ pub fn reconstruct(
 
     /* 卷积 */
 
-    buffer.slice_mut(s![..expected_buffer_size]).fill(0.);
+    buffer.slice_mut(s![..occupied_buffer_size]).fill(0.);
     let (low_pass, high_pass) = (
         ArrayView1::from_shape(window_size, wavelet.recons_low).unwrap(),
         ArrayView1::from_shape(window_size, wavelet.recons_high).unwrap(),
@@ -177,13 +214,13 @@ pub fn reconstruct(
     signal.fill(0.);
 
     let mut step_signal = 0;
-    while step_signal + signal_size < expected_buffer_size {
+    while step_signal < occupied_buffer_size - signal_size {
         signal.add_assign(&buffer.slice(s![step_signal..step_signal + signal_size]));
         step_signal += signal_size;
     }
     signal
         .iter_mut()
-        .zip(buffer.slice(s![step_signal..expected_buffer_size]))
+        .zip(buffer.slice(s![step_signal..occupied_buffer_size]))
         .for_each(|(sig, buf)| *sig += *buf);
 }
 
@@ -398,16 +435,28 @@ mod tests {
     use ndarray::{s, Array1, Array2, Axis};
 
     #[test]
-    fn norm_test() {
+    fn norm() {
         // let wavelet = wavelet::RBIO_3_1;
         let wavelet = wavelet::BIOR_3_1;
+
         let mut signal = Array1::<FLTYPE>::from_vec(vec![0., 0., 0., 0., 255., 255., 255., 255.]);
         let mut buffer = Array1::<FLTYPE>::zeros(signal.len() + wavelet.window_size() - TWO);
-
         completely_decompose(signal.view_mut(), buffer.view_mut(), wavelet);
         println!("{signal:>5.1}");
+        assert!(0. <= signal[0] && signal[0] <= 255.);
+        signal
+            .slice(s![1..])
+            .for_each(|v| assert!(*v >= -128. && *v <= 128.));
 
-        signal.for_each(|v| assert!(*v >= -128. && *v <= 128.));
+        let mut signal =
+            Array1::<FLTYPE>::from_vec(vec![255., 255., 255., 255., 255., 255., 255., 255.]);
+        let mut buffer = Array1::<FLTYPE>::zeros(signal.len() + wavelet.window_size() - TWO);
+        completely_decompose(signal.view_mut(), buffer.view_mut(), wavelet);
+        println!("{signal:>5.1}");
+        assert!(0. <= signal[0] && signal[0] <= 255.);
+        signal
+            .slice(s![1..])
+            .for_each(|v| assert!(*v >= -128. && *v <= 128.));
     }
 
     #[test]

@@ -1,10 +1,10 @@
 [package]
 name = "omni-wave"
-version = "0.2.0-alpha"
+version = "0.2.1"
 edition = "2021"
 authors = ["K--A"]
 
-description = "Easy to use Discrete Wavelet Transform library, no need to worry about padding, and a variety of wavelets are available."
+description = "Easy to use DWT (Discrete Wavelet Transform) library, no need to worry about padding, and a variety of wavelets are available."
 
 documentation = "https://docs.rs/omni-wave"
 repository = "https://github.com/eternal-io/omni-wave"
